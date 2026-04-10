@@ -1,0 +1,59 @@
+{
+  "variables": {
+    "applicationId": "e9fdb985-9173-4e01-9d73-ac2d60d1dc8e"
+  },
+
+  "apiKeys": [
+    {
+      "key":         "e22953ed-041d-4915-bb7b-e6b1164a37a1",
+      "description": "Discord connector demo key — superuser for local demo use"
+    }
+  ],
+
+  "apiRequests": [
+
+    {
+      "_comment": "1. Create the FusionAuth admin user",
+      "method": "POST",
+      "url": "/api/user/registration",
+      "body": {
+        "registration": {
+          "applicationId": "3c219e58-ed0e-4b18-ad48-f4f92793ae32",
+          "roles": ["admin"]
+        },
+        "user": {
+          "email":     "brad.mccarty@fusionauth.io",
+          "password":  "PFEFKUa8S!!",
+          "firstName": "Demo",
+          "lastName":  "Admin"
+        }
+      }
+    },
+
+    {
+      "_comment": "2. Create the demo application that users will log into",
+      "method": "POST",
+      "url": "/api/application/#{applicationId}",
+      "body": {
+        "application": {
+          "name": "Discord Demo App",
+          "oauthConfiguration": {
+            "authorizedRedirectURLs": [
+              "http://localhost:3000"
+            ],
+            "clientAuthenticationPolicy": "NotRequired",
+            "enabledGrants": ["authorization_code", "refresh_token"],
+            "generateRefreshTokens": true,
+            "requireClientAuthentication": false
+          },
+          "loginConfiguration": {
+            "allowTokenRefresh": true,
+            "generateRefreshTokens": true,
+            "requireAuthentication": true
+          }
+        }
+      }
+    }
+
+  ]
+}

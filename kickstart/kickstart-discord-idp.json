@@ -1,0 +1,76 @@
+{
+  "_comment": [
+    "FusionAuth Kickstart snippet — Discord OIDC Identity Provider",
+    "",
+    "This is an ADD-ON block for an existing Kickstart file.",
+    "It assumes FusionAuth is already bootstrapped (admin user exists, etc.).",
+    "Merge these apiRequests into your existing Kickstart's apiRequests array.",
+    "",
+    "Required environment variables:",
+    "  DISCORD_CLIENT_ID      — your Discord application's Client ID",
+    "  DISCORD_CLIENT_SECRET  — your Discord application's Client Secret",
+    "",
+    "Optional: set applicationConfiguration to enable Discord for a specific",
+    "application. Remove that block entirely for tenant-wide config.",
+    "",
+    "NOTE: FusionAuth passes Discord's userinfo claims through the `idToken`",
+    "parameter in the reconcile lambda (not `userInfo`) because Discord does not",
+    "issue a real JWT id_token. The lambda below accounts for this.",
+    "",
+    "Reference: https://fusionauth.io/docs/lifecycle/authenticate-users/kickstart"
+  ],
+
+  "apiRequests": [
+    {
+      "_comment": "Step 1: Create the Discord reconcile lambda",
+      "method": "POST",
+      "url": "/api/lambda",
+      "body": {
+        "lambda": {
+          "name":       "Discord OIDC Reconcile",
+          "type":       "OpenIDReconcile",
+          "engineType": "GraalJS",
+          "enabled":    true,
+          "debug":      false,
+          "body": "// NOTE: Discord claims arrive in `idToken`, not `userInfo` — Discord does not\n// issue a real JWT id_token so FusionAuth routes userinfo claims differently.\nfunction reconcile(user, registration, idToken, accessToken, userInfo) {\n  if (idToken.avatar && typeof idToken.avatar === 'string') {\n    var isAnimated = idToken.avatar.startsWith('a_');\n    user.imageUrl = 'https://cdn.discordapp.com/avatars/' + idToken.id + '/' + idToken.avatar + '.' + (isAnimated ? 'gif' : 'png') + '?size=256';\n  } else {\n    var defaultIndex = 0;\n    if (idToken.discriminator === '0') {\n      try { defaultIndex = Number(BigInt(idToken.id) >> BigInt(22)) % 6; } catch(e) { defaultIndex = 0; }\n    } else {\n      defaultIndex = parseInt(idToken.discriminator, 10) % 5;\n    }\n    user.imageUrl = 'https://cdn.discordapp.com/embed/avatars/' + defaultIndex + '.png';\n  }\n  if (idToken.global_name) { user.fullName = idToken.global_name; }\n  else if (idToken.username) { user.fullName = idToken.discriminator && idToken.discriminator !== '0' ? idToken.username + '#' + idToken.discriminator : idToken.username; }\n  if (idToken.username) { user.username = idToken.username; }\n  if (typeof idToken.verified !== 'undefined') { user.verified = idToken.verified; }\n  if (idToken.locale) { user.preferredLanguages = [idToken.locale]; }\n  user.data = user.data || {};\n  user.data.discord = {\n    id: idToken.id, username: idToken.username, discriminator: idToken.discriminator,\n    globalName: idToken.global_name || null, locale: idToken.locale || null,\n    mfaEnabled: idToken.mfa_enabled || false, premiumType: idToken.premium_type || 0,\n    flags: idToken.public_flags || 0,\n    banner: idToken.banner ? 'https://cdn.discordapp.com/banners/' + idToken.id + '/' + idToken.banner + '.png?size=600' : null,\n    accentColor: (typeof idToken.accent_color === 'number') ? '#' + idToken.accent_color.toString(16).padStart(6, '0') : null\n  };\n  registration.data = registration.data || {};\n  registration.data.discord = { id: idToken.id, username: idToken.username };\n}"
+        }
+      },
+      "expectedResponseCodes": [200, 201]
+    },
+
+    {
+      "_comment": "Step 2: Create the Discord identity provider — lambda ID captured from step 1 response",
+      "_comment2": "If you need a deterministic lambda ID, pre-set it in your variables block and reference it here.",
+      "method": "POST",
+      "url": "/api/identity-provider",
+      "body": {
+        "identityProvider": {
+          "type":            "OpenIDConnect",
+          "name":            "Discord",
+          "enabled":         true,
+          "debug":           false,
+          "linkingStrategy": "LinkByEmail",
+
+          "oauth2": {
+            "authorization_endpoint":       "https://discord.com/api/oauth2/authorize",
+            "token_endpoint":               "https://discord.com/api/oauth2/token",
+            "userinfo_endpoint":            "https://discord.com/api/users/@me",
+            "client_id":                    "#{ENV:DISCORD_CLIENT_ID}",
+            "client_secret":                "#{ENV:DISCORD_CLIENT_SECRET}",
+            "scope":                        "identify email",
+            "client_authentication_method": "client_secret_post"
+          },
+
+          "uniqueIdClaim":      "id",
+          "emailClaim":         "email",
+          "emailVerifiedClaim": "verified",
+
+          "buttonText":     "Login with Discord",
+          "buttonColor":    "#5865F2",
+          "buttonImageURL": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjcuMTQgOTYuMzYiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0xMDcuNyw4LjA3QTEwNS4xNSwxMDUuMTUsMCwwLDAsODEuNDcsMGE3Mi4wNiw3Mi4wNiwwLDAsMC0zLjM2LDYuODNBOTcuNjgsOTcuNjgsMCwwLDAsNDksNi44Myw3Mi4zNyw3Mi4zNywwLDAsMCw0NS42NCwwLDEwNS44OSwxMDUuODksMCwwLDAsMTkuMzksOC4wOUMyLjc5LDMyLjY1LTEuNzEsNTYuNi41NCw4MC4yMWgwQTEwNS43MywxMDUuNzMsMCwwLDAsMzIuNzEsOTYuMzYsNzcuNyw3Ny43LDAsMCwwLDM5LjYsODUuMjVhNjguNDIsNjguNDIsMCwwLDEtMTAuODUtNS4xOGMuOTEtLjY2LDEuOC0xLjM0LDIuNjYtMmE3NS41Nyw3NS41NywwLDAsMCw2NC4zMiwwYy44Ny43MSwxLjc2LDEuMzksMi42NiwyYTY4LjY4LDY4LjY4LDAsMCwxLTEwLjg3LDUuMTksNzcsNzcsMCwwLDAsNi44OSwxMS4xQTEwNS4yNSwxMDUuMjUsMCwwLDAsMTI2LjYsODAuMjJoMEMxMjkuMjQsNTIuODQsMTIyLjA5LDI5LjExLDEwNy43LDguMDdaTTQyLjQ1LDY1LjY5QzM2LjE4LDY1LjY5LDMxLDYwLDMxLDUzczUtMTIuNzQsMTEuNDMtMTIuNzRTNTQsNDYsNTMuODksNTMsNDguODQsNjUuNjksNDIuNDUsNjUuNjlabTQyLjI0LDBDNzguNDEsNjUuNjksNzMuMjUsNjAsNzMuMjUsNTNzNS0xMi43NCwxMS40NC0xMi43NFM5Ni4yMyw0Niw5Ni4xMiw1Myw5MS4wOCw2NS42OSw4NC42OSw2NS42OVoiLz48L3N2Zz4="
+        }
+      },
+      "expectedResponseCodes": [200, 201]
+    }
+  ]
+}

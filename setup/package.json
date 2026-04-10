@@ -1,0 +1,21 @@
+{
+  "name": "fusionauth-discord-connector-setup",
+  "version": "1.0.0",
+  "description": "CLI tool to provision Discord as an OIDC identity provider in FusionAuth",
+  "type": "module",
+  "main": "setup.js",
+  "bin": {
+    "fa-discord-setup": "./setup.js"
+  },
+  "scripts": {
+    "start": "node setup.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "prompts": "^2.4.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "Apache-2.0"
+}

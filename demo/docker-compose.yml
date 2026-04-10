@@ -1,0 +1,72 @@
+# FusionAuth × Discord — Hack Day Demo
+# Tested with OrbStack. Works with any Docker-compatible runtime.
+#
+# Usage:
+#   cp .env.example .env
+#   (fill in DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)
+#   docker compose up -d
+#   open http://localhost:9011
+
+services:
+
+  db:
+    image: postgres:16.3-alpine
+    container_name: fusionauth-demo-db
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: ${POSTGRES_USER:-fusionauth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fusionauth_dev}
+      POSTGRES_DB: fusionauth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fusionauth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - demo-net
+
+  fusionauth:
+    # Pin to a specific version — "latest" can pull breaking changes between runs.
+    # Check https://github.com/FusionAuth/fusionauth-containers/releases for updates.
+    image: fusionauth/fusionauth-app:1.54.0
+    container_name: fusionauth-demo
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/fusionauth
+      DATABASE_ROOT_USERNAME: ${POSTGRES_USER:-fusionauth}
+      DATABASE_ROOT_PASSWORD: ${POSTGRES_PASSWORD:-fusionauth_dev}
+      DATABASE_USERNAME: ${POSTGRES_USER:-fusionauth}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-fusionauth_dev}
+      FUSIONAUTH_APP_MEMORY: 512M
+      FUSIONAUTH_APP_RUNTIME_MODE: production
+      FUSIONAUTH_APP_URL: http://localhost:9011
+      # No Kickstart — FusionAuth will show the setup wizard on first boot.
+      # Complete it, create an API key, then run: node ../setup/setup.js
+    ports:
+      # Bind to localhost only — FusionAuth should not be reachable on the
+      # local network during development. Remove 127.0.0.1: only if you need
+      # it accessible from other machines intentionally.
+      - "127.0.0.1:9011:9011"
+    volumes:
+      - ./kickstart:/usr/local/fusionauth/kickstart
+      - fusionauth-config:/usr/local/fusionauth/config
+    networks:
+      - demo-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9011/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  db-data:
+  fusionauth-config:
+
+networks:
+  demo-net:
+    driver: bridge
